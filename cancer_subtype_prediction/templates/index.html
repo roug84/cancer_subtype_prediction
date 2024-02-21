@@ -1,0 +1,15 @@
+{% extends "acessolayout.html" %}
+
+{% block content %}
+    {% if session['logged_in'] %}
+        <h2> Welcome </h2>
+    {% else %}
+        <h2> Welcome </h2>
+        <p> This App:</p>
+        <ul>
+            <li>uses a deep learning model to predict cancer subtypes</li>
+            <li>give the 20 most important genes to reach the predicted type</li>
+            <li>enrichment analysis</li>
+        </ul>
+    {% endif %}
+{% endblock %}

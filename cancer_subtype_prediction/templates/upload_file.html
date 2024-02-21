@@ -1,0 +1,200 @@
+{% extends "acessolayout.html" %}
+{% block content %}
+    <div class="main-content">
+        <div class="upload-section">
+            <h1>Upload new File</h1>
+            <form id="upload-form" method="post" enctype="multipart/form-data" action="{{ url_for('bp10.view') }}" onsubmit="showProcessingMessage()">
+                <div id="drop-area">
+                    <p id="drop-message">Drag and drop a file here or <b>click to upload</b></p>
+                    <input type="file" name="file" id="fileElem" accept="*" onchange="handleFiles(this.files)" style="display:none;">
+                    <label for="fileElem" class="button">Select a file</label>
+                    <!-- Processing message placeholder inside drop-area -->
+                    <div id="processing-message" class="overlay">
+                        <div class="overlay-content">
+                            <img src="{{ url_for('static', filename='image/3d6aa9082f3c9e285df9970dc7b762ac.gif') }}" alt="Loading" />
+                            <p>Processing...</p>
+                        </div>
+                    </div>
+                </div>
+                <input type="submit" value="Predict" class="button">
+            </form>
+        </div>
+        <div class="instructions">
+            <p>Welcome to the TCGA cancer subtype prediction tool. Please upload your file in the specified format.</p>
+            <p><strong>File Format:</strong> CSV or Parquet file containing gene expression data in the following table format:</p>
+            <div class="table-format">
+                <table>
+                    <tr>
+                        <th>Gene1</th>
+                        <th>Gene2</th>
+                        <th>...</th>
+                        <th>GeneN</th>
+                    </tr>
+                    <tr>
+                        <td>Expression</td>
+                        <td>Expression</td>
+                        <td>...</td>
+                        <td>Expression</td>
+                    </tr>
+                </table>
+            </div>
+            <p><strong>Gene1, ... GeneN</strong> must be Ensembl Gene IDs, i.e., start with ENSG.</p>
+            <p>The app checks that the 1000 genes that are required for prediction are in your dataset</p>
+        </div>
+
+    </div>
+
+
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <div id="chart" style="width:100%;max-width:900px;height:500px;"></div>
+    <script type="text/javascript">
+        var graphs = {{graphJSON | safe}};
+        Plotly.plot('chart', graphs, {});
+    </script>
+
+    <script>
+        let dropArea = document.getElementById('drop-area');
+        let fileInput = document.getElementById('fileElem');
+        let dropMessage = document.getElementById('drop-message');
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('highlight');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('highlight');
+        }
+
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            let dt = e.dataTransfer;
+            let files = dt.files;
+            fileInput.files = files;
+            handleFiles(files);
+            fileInput.dispatchEvent(new Event('change'));
+        }
+
+        function handleFiles(files) {
+            if (files.length > 0) {
+                var fileName = files[0].name;
+                dropMessage.innerHTML = `File selected: <b>${fileName}</b>`;
+            }
+        }
+
+        function showProcessingMessage() {
+            var processingDiv = document.getElementById('processing-message');
+            processingDiv.innerHTML = `
+                <div class="processing-content">
+                    <p><img src="{{ url_for('static', filename='image/3d6aa9082f3c9e285df9970dc7b762ac.gif') }}" alt="Loading" /></p>
+                </div>
+            `;
+            processingDiv.style.display = 'flex';
+        }
+
+    </script>
+    <style>
+        #drop-area {
+            position: relative; /* Needed for positioning the processing message */
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8); /* Semi-transparent white background */
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .overlay-content {
+            text-align: center;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 8px 15px;
+            margin: 10px 0;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #processing-message {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none; /* Hide by default */
+            justify-content: center;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.8); /* Semi-transparent white */
+        }
+
+        .processing-content {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .processing-content img {
+            margin-top: 1px; /* Add some space between the text and the image */
+        }
+        /* For Table */
+        .instructions {
+            font-size: 14px;
+            margin-top: 20px;
+        }
+
+        .table-format {
+            margin-top: 10px;
+        }
+
+        .table-format table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .table-format th, .table-format td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .table-format th {
+            background-color: #f2f2f2;
+            color: black;
+        }
+
+    </style>
+{% endblock %}

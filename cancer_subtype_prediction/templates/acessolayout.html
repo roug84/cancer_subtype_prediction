@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>TCGA cancer subtype prediction and explanation</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel = "icon" href = "{{ url_for('static', filename ='image/Logo_EngranevF.png') }}"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+    <style>
+        .main-content {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-start;
+        }
+        .instructions {
+            max-width: 30%;
+            margin: 20px;
+            padding: 10px;
+            background-color: #f4f4f4; /* Adjust as needed */
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .container {
+            margin: 20px;
+        }
+        .container {
+            padding: 20px;
+            background-color: white; /* White background for content */
+            color: #333; /* Dark text for readability */
+        }
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4; /* Light gray background */
+            color: #333; /* Dark text for readability */
+        }
+        .header {
+            background-color: #007bff; /* Blue background */
+            color: white; /* White text */
+            padding: 10px 20px;
+            text-align: center;
+        }
+        .navbar {
+            overflow: hidden;
+            background-color: #333; /* Dark background for navbar */
+        }
+        .navbar a {
+            float: left;
+            display: block;
+            color: white; /* White text on dark background */
+            text-align: center;
+            padding: 14px 20px;
+            text-decoration: none;
+        }
+        .navbar a:hover {
+            background-color: #ddd; /* Light background on hover */
+            color: black; /* Dark text on light background */
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>TCGA cancer subtype prediction and explanation</h1>
+        <h3>Welcome!</h3>
+    </div>
+
+    <nav class="navbar">
+        <a href="/">Home</a>
+        <a href="/upload_file">Predict cancer</a>
+    </nav>
+
+   <div class="main-content">
+        <div class="container">
+            {% block content %}
+            {% endblock %}
+        </div>
+    </div>
+
+    <nav class="navbar">
+        <h3>Contact: hector.m.romero.ugalde@gmail.com</h3>
+    </nav>
+</body>
+</html>
