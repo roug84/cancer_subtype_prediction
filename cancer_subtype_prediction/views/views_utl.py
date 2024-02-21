@@ -213,12 +213,16 @@ def load_model(
     log.info("get_best_run")
 
     if not docker:
-        # Load the best model from mlflow
-        log.info("connecting to mlflow")
-        mlflow.set_tracking_uri("http://localhost:8000")
-
-        best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
-        return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
+        # # Load the best model from mlflow
+        # log.info("connecting to mlflow")
+        # mlflow.set_tracking_uri("http://localhost:8000")
+        #
+        # best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
+        # return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
+        model_path = "../data/artifacts/artifacts/1/e0f3b26e080143f88a09f434b6d23641/artifacts/pipeline"
+        if os.path.exists(model_path):
+            log.info(f"Model path {model_path} exists.")
+            return mlflow.sklearn.load_model(model_path)
     else:
         # mlflow.set_tracking_uri('http://host.docker.internal:8000')
         model_path = "data/artifacts/artifacts/1/e0f3b26e080143f88a09f434b6d23641/artifacts/pipeline"
