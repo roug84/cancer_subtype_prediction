@@ -5,6 +5,8 @@
       <sourceFolder url="file://$MODULE_DIR$/cancer_subtype_prediction" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/roug_ml" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/data/pancan-gtex-target" />
+      <excludeFolder url="file://$MODULE_DIR$/.idea" />
+      <excludeFolder url="file://$MODULE_DIR$/results/tcga/TCGA_BRCA_vf_250/enrichr_kegg" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
