@@ -17,10 +17,8 @@ from beartype.typing import Tuple, List
 from mlflow import MlflowClient
 from werkzeug import datastructures
 import mlflow
-from configs import TCGA_DATA_PATH
+from configs import TCGA_DATA_PATH, data_path
 from etl import select_protein_coding_genes
-import sys
-sys.path.append('/path/to/roug_ml')
 
 ALLOWED_EXTENSIONS = {
     "csv",
@@ -219,7 +217,11 @@ def load_model(
         #
         # best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
         # return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
-        model_path = "../data/artifacts/artifacts/1/e0f3b26e080143f88a09f434b6d23641/artifacts/pipeline"
+        model_path = \
+            os.path.join(
+                data_path,
+                "artifacts/artifacts/1/e0f3b26e080143f88a09f434b6d23641/artifacts/pipeline"
+            )
         if os.path.exists(model_path):
             log.info(f"Model path {model_path} exists.")
             return mlflow.sklearn.load_model(model_path)

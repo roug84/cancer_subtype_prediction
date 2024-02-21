@@ -4,6 +4,7 @@
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/cancer_subtype_prediction" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/roug_ml" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/data/pancan-gtex-target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

@@ -9,6 +9,8 @@ import ftplib
 
 from beartype.typing import List, Tuple
 import gzip
+
+from roug_ml.utl.paths_utl import create_dir
 # from roug_ml.utl.dowload_utils import download_file
 
 
@@ -249,10 +251,12 @@ def select_protein_coding_genes(
     # replace with desired release version
     base_url = f"ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_{gencode_release}/gencode.v{gencode_release}.annotation.gtf.gz"
 
-   # Specify a directory for storing the GTF files (modify as necessary)
+    # Specify a directory for storing the GTF files (modify as necessary)
     # Download the file
     if not os.path.exists(in_gencode_gtf_gz_filepath):
         print(f"Downloading GENCODE {gencode_release} GTF file...")
+        directory_path = os.path.dirname(in_gencode_gtf_gz_filepath)
+        create_dir(directory_path)
         download_file_from_ftp(base_url, file_path=in_gencode_gtf_gz_filepath)
 
     gunzip_file(
