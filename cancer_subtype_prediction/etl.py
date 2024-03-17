@@ -10,9 +10,24 @@ import ftplib
 from beartype.typing import List, Tuple
 import gzip
 
-from roug_ml.utl.paths_utl import create_dir
+# from roug_ml.utl.paths_utl import create_dir
 # from roug_ml.utl.dowload_utils import download_file
 
+
+def create_dir(in_path: str, in_folder_name: str = "", in_exist_ok: bool = False) -> str:
+    """
+    Create directory from path and folder name
+    :param in_path: path to create the folder in
+    :param in_folder_name: subfolder name (default is empty, just create parent folder)
+    :param in_exist_ok: Boolean (default is False). If set to True, the function won't raise an
+    error if the directory already exists. If False and directory already exists, an OSError is
+    raised.
+    :return: The absolute path of the created directory.
+    """
+    file_path = os.path.join(in_path, in_folder_name)
+    if not os.path.exists(file_path):
+        os.makedirs(file_path, exist_ok=in_exist_ok)
+    return file_path
 
 def gunzip_file(in_source_path: str, in_destination_path: str) -> None:
     """
@@ -149,6 +164,7 @@ def convert_and_save_mapping(ensembl_gene_id_list: list, in_path: str) -> pd.Dat
     mapping_df = pd.DataFrame.from_dict(
         ensembl_gene_to_protein_mapping, orient="index", columns=["Ensembl_Protein_ID"]
     )
+
     mapping_df.to_csv(in_path, index=True)
     return mapping_df
 
@@ -310,6 +326,34 @@ def select_protein_coding_genes(
 
     return filtered_df
 
+def download_gencode_gtf_file(gencode_release: int) -> str:
+    """
+    Download the GENCODE GTF file for a specified release version and save it to the specified directory.
+
+    :param gencode_release: GENCODE release version.
+    :return: Path to the downloaded GTF file.
+    """
+    str_gencode_release = str(gencode_release)
+    base_url = f"ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_{str_gencode_release}/gencode.v{str_gencode_release}.annotation.gtf.gz"
+
+    # Specify a directory for storing the GTF files
+    gtf_dir = "gtf_files"
+    os.makedirs(gtf_dir, exist_ok=True)
+
+    destination = os.path.join(
+        gtf_dir, f"gencode.v{str_gencode_release}.annotation.gtf.gz"
+    )
+
+    # Download the file
+    print(f"Downloading GENCODE {str_gencode_release} GTF file...")
+    download_file_from_url(base_url, in_gencode_gtf_gz_filepath=destination)
+    # download_file(base_url, destination)
+
+    # Unzipping the file
+    os.system(f"gunzip {destination}")
+
+    gtf_file_path = destination.replace(".gz", "")
+
 
 def extract_protein_coding_genes(
     in_path_to_save_df: str, in_gencode_release: int
@@ -347,6 +391,7 @@ def extract_protein_coding_genes(
         os.system(f"gunzip {destination}")
 
         gtf_file_path = destination.replace(".gz", "")
+
         gene_id_to_name = {}
 
         # Parse the GTF file and extract gene names for protein-coding genes only

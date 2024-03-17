@@ -4,7 +4,6 @@ log = logging.getLogger(__name__)  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 
-
 from views.views_utl import (
     load_data,
     select_protein_coding_genes_deploy,
@@ -19,19 +18,17 @@ import pandas as pd
 from beartype.typing import List, Tuple
 import os
 import shap
-import pickle
 import numpy as np
 import torch
-from werkzeug import datastructures
 from sklearn.pipeline import Pipeline
 from flask import Blueprint, render_template, redirect, flash
 from flask import request
-import re
 
 from etl import extract_X_y_from_dataframe
 from configs import TCGA_RESULTS_PATH
 import gseapy as gp
-
+import matplotlib
+matplotlib.use('TkAgg')  # Use the Tkinter backend
 
 unique_cancer_types = [
     "GBM",
@@ -71,8 +68,8 @@ unique_cancer_types = [
 in_cancer_types = ["BRCA"]
 
 UPLOAD_FOLDER = "/Users/hector/DiaHecDev/data"
-mlflow_experiment_name: str = "TCGA_BRCA_vf_250"
-docker = True
+mlflow_experiment_name: str = "TCGA_BRCA_vf_290"
+docker = False
 
 bp10 = Blueprint("bp10", __name__, template_folder="templates")
 
@@ -282,6 +279,28 @@ def enrichment_analysis_deployed(
     return df_htmls
 
 
+def plot_corr_data(train_summary_df: pd.DataFrame,
+                   new_inputs_summary_df: pd.DataFrame) -> dict:
+    """
+    Plot correlation data between two summary DataFrames.
+
+    :param train_summary_df: Summary DataFrame of training data.
+    :param new_inputs_summary_df: Summary DataFrame of new inputs.
+
+    :returns : Dictionary containing x and y data points along with the title for the plot.
+    """
+    # Extract the data points
+    plot_data = {
+        "x": train_summary_df.iloc[1].tolist(),
+        "y": new_inputs_summary_df.iloc[1].tolist(),
+        "title": "Correlation Plot",  # You can change the title as needed
+        "xaxis": "Training mean",  # You can change the title as needed
+        "yaxis": "Your data",
+
+    }
+    return plot_data
+
+
 @bp10.route("/upload_file", methods=["POST", "GET"])
 def view():
 
@@ -305,6 +324,7 @@ def view():
             selected_feature_names,
             feature_names,
             explainer_loaded,
+            inputs_stats_summary_df
         ) = load_explainer_label_mapping_selected_feature_names_feature_names(
             res_path=results_path
         )
@@ -319,18 +339,27 @@ def view():
         # Check genes are Ensembl Gene IDs
         # Asserting that all columns have values starting with "ENSG"
         cols_ensg = [col.startswith("ENSG") for col in input_df.columns]
-        cols = input_df.columns
+
+        # Rename columns to remove ".1", ".2", etc. suffixes
+        cols_without_version_rename = {col: col.split('.')[0] for col in input_df.columns}
+        input_df = input_df.rename(columns=cols_without_version_rename)
+
+        cols_without_version = list(cols_without_version_rename.values())
 
         messages = []
-        if len(cols_ensg) == len(cols):
+        if len(cols_ensg) == len(cols_without_version):
             messages.append("Not all columns start with 'ENSG'")
 
         # Check if all the required columns are present in the input dataframe
-        cols_without_version = [col.split(".")[0] for col in cols]
         if not all(col in cols_without_version for col in selected_feature_names):
             raise ValueError(
                 "Some required columns are missing from the input dataframe."
             )
+
+        train_summary_df = inputs_stats_summary_df[selected_feature_names]
+        new_inputs_summary_df = input_df[selected_feature_names].describe()
+
+        plot_data = plot_corr_data(train_summary_df, new_inputs_summary_df)
 
         predictions, df_protein_coding_genes_ordered, x_test = predict_deployed(
             input_df=input_df,
@@ -348,6 +377,9 @@ def view():
             results_path=results_path,
             explainer_loaded=explainer_loaded,
         )
+        shap_html["data"][0]["x"].reverse()
+        shap_html["data"][0]["y"].reverse()
+        [print(x) for x in [shap_html["data"][0]["x"][0:50]]]
 
         df_htmls = enrichment_analysis_deployed(
             in_prediction=predictions[0],
@@ -371,6 +403,7 @@ def view():
             df_htmls=df_htmls,
             shap_plot=shap_html,
             predictions=predicted_subtypes,
+            plot_data=plot_data
         )
 
         # if user does not select file, browser also

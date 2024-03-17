@@ -73,6 +73,9 @@ def load_explainer_label_mapping_selected_feature_names_feature_names(
     selected_feature_names_path = os.path.join(res_path, "selected_feature_names.pkl")
 
     feature_names_path = os.path.join(res_path, "feature_names.pkl")
+
+    inputs_stats_summary_path = os.path.join(res_path, 'inputs_stats_summary.csv')
+
     # Load shap values
 
     with open(shap_values_path, "rb") as f:
@@ -93,7 +96,10 @@ def load_explainer_label_mapping_selected_feature_names_feature_names(
     with open(feature_names_path, "rb") as file:
         feature_names = pickle.load(file)
 
-    return shap_values, loaded_label_mapping, selected_feature_names, feature_names, explainer
+    inputs_stats_summary_df = pd.read_csv(inputs_stats_summary_path)
+
+    return shap_values, loaded_label_mapping, selected_feature_names, feature_names, explainer, \
+           inputs_stats_summary_df
 
 
 def load_gene_id_to_name_map(results_path: str) -> dict:
@@ -211,20 +217,20 @@ def load_model(
     log.info("get_best_run")
 
     if not docker:
-        # # Load the best model from mlflow
-        # log.info("connecting to mlflow")
-        # mlflow.set_tracking_uri("http://localhost:8000")
-        #
-        # best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
-        # return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
-        model_path = \
-            os.path.join(
-                data_path,
-                "artifacts/artifacts/1/e0f3b26e080143f88a09f434b6d23641/artifacts/pipeline"
-            )
-        if os.path.exists(model_path):
-            log.info(f"Model path {model_path} exists.")
-            return mlflow.sklearn.load_model(model_path)
+        # Load the best model from mlflow
+        log.info("connecting to mlflow")
+        mlflow.set_tracking_uri("http://localhost:8000")
+
+        best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
+        return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
+        # model_path = \
+        #     os.path.join(
+        #         data_path,
+        #         "artifacts/artifacts/1/e0f3b26e080143f88a09f434b6d23641/artifacts/pipeline"
+        #     )
+        # if os.path.exists(model_path):
+        #     log.info(f"Model path {model_path} exists.")
+        #     return mlflow.sklearn.load_model(model_path)
     else:
         # mlflow.set_tracking_uri('http://host.docker.internal:8000')
         model_path = "data/artifacts/artifacts/1/e0f3b26e080143f88a09f434b6d23641/artifacts/pipeline"
