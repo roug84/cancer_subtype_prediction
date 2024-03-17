@@ -51,6 +51,14 @@ from views.views_utl import get_explanation_for_class
 
 # print(TCGA_DATA_PATH)
 
+def feature_inspection(train_df, test_sample):
+    for feature in train_df.columns:
+        train_values = train_df[feature]
+        test_value = test_sample[feature]
+        print(f"Feature: {feature}")
+        print(f"Train - Mean: {train_values.mean()}, Std: {train_values.std()}")
+        print(f"Test: {test_value}")
+
 
 def compute_shap_values_for_ensemble(
     models: List[Tuple], X: np.ndarray, feature_names: List[str]
@@ -173,6 +181,7 @@ class TCGASubtypePredictor:
         self.selected_feature_names_path = os.path.join(
             self.results_path, "selected_feature_names.pkl"
         )
+        self.inputs_stats_summary_path = os.path.join(self.results_path, 'inputs_stats_summary.csv')
 
         self.feature_names_path = os.path.join(self.results_path, "feature_names.pkl")
 
@@ -189,7 +198,7 @@ class TCGASubtypePredictor:
 
         self.set_mlflow_params()
         self.label_mapping = None
-        self.re_optimize = True
+        self.re_optimize = False
 
     def set_mlflow_params(self):
         """
@@ -331,6 +340,23 @@ class TCGASubtypePredictor:
         self.validate(x_test, y_test, self.label_mapping)
 
         self.explain(x_test, feature_names)
+
+        df_tmp = merged_df[self.selected_feature_names].copy()
+
+        # Compute statistics for each column
+        stats_df = df_tmp.describe()
+
+        # Additional calculations for minimum and maximum values
+        min_values = df_tmp.min()
+        max_values = df_tmp.max()
+
+        # Add minimum and maximum values to the statistics DataFrame
+        stats_df.loc['min'] = min_values
+        stats_df.loc['max'] = max_values
+
+        stats_df.to_csv()
+
+        stats_df.to_csv(self.inputs_stats_summary_path )
 
         gene_id_to_name_df = extract_gene_id_to_name_mapping(
             in_path_to_save_df=os.path.join(
@@ -960,6 +986,6 @@ if __name__ == "__main__":
     #            'READ', 'LGG', 'DLBC', 'KICH', 'UCS', 'ACC', 'PCPG', 'UVM']
     c_types = ["BRCA"]
     analysis = TCGASubtypePredictor(
-        in_mlflow_experiment_name="TCGA_BRCA_vf_260", in_cancer_types=c_types
+        in_mlflow_experiment_name="TCGA_BRCA_vf_290", in_cancer_types=c_types
     )
     analysis.run()

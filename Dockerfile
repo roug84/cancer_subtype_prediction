@@ -49,6 +49,8 @@ RUN mkdir -p /app/gtf_files && chown -R appuser:appuser /app/gtf_files
 # Expose port 1000
 EXPOSE 1000
 #  export PYTHONPATH="${PYTHONPATH}:/Users/hector/DiaHecDev/roug_ml"
+# export PYTHONPATH="${PYTHONPATH}:/Users/hector/cancer_subtype_prediction/cancer_subtype_prediction"
+ #export PYTHONPATH="${PYTHONPATH}:/Users/hector/cancer_subtype_prediction/roug_ml"
 
 # Command to run the application:  gunicorn --timeout 0 -b 0.0.0.0:1000 tcga_app:app
 CMD ["gunicorn", "--workers", "4", "--timeout", "0", "-b", "0.0.0.0:1000", "cancer_subtype_prediction.tcga_app:app"]
