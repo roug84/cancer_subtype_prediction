@@ -220,7 +220,6 @@ def load_model(
         # Load the best model from mlflow
         log.info("connecting to mlflow")
         mlflow.set_tracking_uri("http://localhost:8000")
-
         best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
         return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
         # model_path = \

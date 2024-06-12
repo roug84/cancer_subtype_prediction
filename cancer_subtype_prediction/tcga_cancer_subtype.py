@@ -198,7 +198,7 @@ class TCGASubtypePredictor:
 
         self.set_mlflow_params()
         self.label_mapping = None
-        self.re_optimize = False
+        self.re_optimize = True
 
     def set_mlflow_params(self):
         """
@@ -833,8 +833,10 @@ class TCGASubtypePredictor:
             in_framework="torch",
             model_save_path=self.results_path,
             in_mlflow_experiment_id=self.mlflow_experiment_id,
+            in_mlflow_experiment_name=self.mlflow_experiment_name,
             use_kfold=False,
             in_scaler=None,
+
             # in_selector=ModelBasedOneHotSelector(LinearSVC(penalty="l1",
             #                                             dual=False,
             #                                             random_state=42)
@@ -986,6 +988,6 @@ if __name__ == "__main__":
     #            'READ', 'LGG', 'DLBC', 'KICH', 'UCS', 'ACC', 'PCPG', 'UVM']
     c_types = ["BRCA"]
     analysis = TCGASubtypePredictor(
-        in_mlflow_experiment_name="TCGA_BRCA_vf_290", in_cancer_types=c_types
+        in_mlflow_experiment_name="TCGA_BRCA_vminio_postgre_2", in_cancer_types=c_types
     )
     analysis.run()

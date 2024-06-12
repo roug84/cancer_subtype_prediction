@@ -68,7 +68,7 @@ unique_cancer_types = [
 in_cancer_types = ["BRCA"]
 
 UPLOAD_FOLDER = "/Users/hector/DiaHecDev/data"
-mlflow_experiment_name: str = "TCGA_BRCA_vf_290"
+mlflow_experiment_name: str = "TCGA_BRCA_vminio_postgre_2"
 docker = False
 
 bp10 = Blueprint("bp10", __name__, template_folder="templates")
