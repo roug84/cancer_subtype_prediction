@@ -3,10 +3,20 @@
     <div class="main-content">
         <div class="upload-section">
             <h1>Upload new File</h1>
+
+            <!-- Display flashed messages -->
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    <div class="alert alert-warning" role="alert">
+                        {{ messages[0] }}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
             <form id="upload-form" method="post" enctype="multipart/form-data" action="{{ url_for('bp10.view') }}" onsubmit="showProcessingMessage()">
                 <div id="drop-area">
                     <p id="drop-message">Drag and drop a file here or <b>click to upload</b></p>
-                    <input type="file" name="file" id="fileElem" accept="*" onchange="handleFiles(this.files)" style="display:none;">
+                    <input type="file" name="file" id="fileElem" accept=".csv, .parquet" onchange="handleFiles(this.files)" style="display:none;">
                     <label for="fileElem" class="button">Select a file</label>
                     <!-- Processing message placeholder inside drop-area -->
                     <div id="processing-message" class="overlay">
@@ -43,7 +53,6 @@
         </div>
 
     </div>
-
 
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <div id="chart" style="width:100%;max-width:900px;height:500px;"></div>
@@ -108,7 +117,6 @@
             `;
             processingDiv.style.display = 'flex';
         }
-
     </script>
     <style>
         #drop-area {
@@ -198,3 +206,4 @@
 
     </style>
 {% endblock %}
+

@@ -332,6 +332,14 @@ def view():
         log.info("Request files")
         file_x = request.files["file"]
 
+        if file_x.filename == "":
+            flash("No selected file")
+            return redirect(request.url)
+
+        if not allowed_file(file_x.filename):
+            flash("File type not allowed. Please upload a CSV or Parquet file.")
+            return redirect(request.url)
+
         log.info("Loading data")
         input_df = load_data(file_x)
 

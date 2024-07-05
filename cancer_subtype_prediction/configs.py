@@ -9,6 +9,8 @@ root_path = os.path.abspath(os.path.join(__file__, os.pardir))
 # Path to main data folder
 data_path = os.path.abspath(os.path.join(root_path, "../data"))
 
+models_path = os.path.abspath(os.path.join(root_path, "../models"))
+
 # Path to results
 RESULTS_PATH = os.path.abspath(os.path.join(root_path, "../results"))
 
@@ -21,3 +23,9 @@ SIMBOLS_ENSEMBL_MAPPING_PATH = os.path.join(TCGA_DATA_PATH, 'simbols_ensembl_map
 
 # Path to save results related to this project
 TCGA_RESULTS_PATH = os.path.join(RESULTS_PATH, "tcga")
+
+# Path to save results related to this project
+BIO_LLM_PATH = os.path.join(data_path, "bio_llm")
+
+LLM_MODELS_PATH = os.path.join(models_path, 'llms')
+

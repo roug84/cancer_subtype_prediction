@@ -11,6 +11,8 @@ from roug_ml.models.hyperoptimization import get_best_run_from_hyperoptim
 from roug_ml.models.hyperoptimization import parallele_hyper_optim
 from roug_ml.utl.parameter_utils import generate_param_grid_with_different_size_layers
 from roug_ml.utl.mlflow_utils import get_best_run, get_top_n_runs
+from configs import BIO_LLM_PATH, LLM_MODELS_PATH
+from etl import create_dir
 
 # data_preparation.py
 from transformers import GPT2Tokenizer, DataCollatorForLanguageModeling
@@ -26,7 +28,6 @@ from fuzzywuzzy import process
 from nltk.translate.bleu_score import corpus_bleu
 from rouge_score import rouge_scorer
 from bert_score import score as bert_score
-
 
 def evaluate_generation(reference_texts, generated_text):
     # Assume reference_texts is a list of lists of reference texts for BLEU, and a list of strings for ROUGE and BERTScore
@@ -108,8 +109,9 @@ class LLMBioExplained:
         :param in_mlflow_experiment_name: The name of the MLflow experiment for logging runs.
         """
         self.mlflow_experiment_name = in_mlflow_experiment_name
-        self.train_path = "/Users/hector/cancer_subtype_prediction/cancer_subtype_prediction/training_file.txt"
-        self.model_path = "/Users/hector/cancer_subtype_prediction/cancer_subtype_prediction/gpt2_finetuned2"
+        self.train_path = os.path.join(BIO_LLM_PATH, 'tcga_explain', "training_file4.txt")
+        self.model_path = os.path.join(LLM_MODELS_PATH, "gpt2_finetuned")
+        create_dir(self.model_path)
         self.mlflow_experiment_id = None
         self.set_mlflow_params()
         self.re_optimize = True

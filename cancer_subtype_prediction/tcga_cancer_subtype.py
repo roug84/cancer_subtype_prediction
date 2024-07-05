@@ -988,6 +988,6 @@ if __name__ == "__main__":
     #            'READ', 'LGG', 'DLBC', 'KICH', 'UCS', 'ACC', 'PCPG', 'UVM']
     c_types = ["BRCA"]
     analysis = TCGASubtypePredictor(
-        in_mlflow_experiment_name="TCGA_BRCA_vminio_postgre_2", in_cancer_types=c_types
+        in_mlflow_experiment_name="TCGA_BRCA_vminio_postgre_3", in_cancer_types=c_types
     )
     analysis.run()
