@@ -12,6 +12,7 @@ from views.views_utl import (
     get_explanation_for_class,
     load_model,
     allowed_file,
+    load_registered_models
 )
 
 import pandas as pd
@@ -68,7 +69,7 @@ unique_cancer_types = [
 in_cancer_types = ["BRCA"]
 
 UPLOAD_FOLDER = "/Users/hector/DiaHecDev/data"
-mlflow_experiment_name: str = "TCGA_BRCA_vf_290"
+mlflow_experiment_name: str = "TCGA_BRCA_vminio_postgre_2"
 docker = False
 
 bp10 = Blueprint("bp10", __name__, template_folder="templates")
@@ -201,7 +202,7 @@ def enrichment_analysis_deployed(
     selected_feature_names: List[str],
     x_test: np.ndarray,
     results_path: str,
-    in_gene_sets: str = "KEGG_2019_Human",
+    in_gene_sets: List[str] = ["KEGG_2019_Human"],
 ) -> List[str]:
     """
     Conducts enrichment analysis on the genes deemed important by SHAP analysis.
@@ -311,8 +312,16 @@ def view():
             flash("No file part")
             return redirect(request.url)
 
-        pipeline = load_model(
-            docker=docker, mlflow_experiment_name=mlflow_experiment_name
+        # pipeline = load_model(
+        #     docker=docker, mlflow_experiment_name=mlflow_experiment_name
+        # )
+
+        pipeline = load_registered_models(
+                model_name_prefix="cancer_subtype_predictor_ensemble",
+                n_models=10,
+                stage="Production",
+                use_ensemble=False,
+                docker = docker
         )
         log.info("model loaded")
 
@@ -331,6 +340,14 @@ def view():
 
         log.info("Request files")
         file_x = request.files["file"]
+
+        # if file_x.filename == "":
+        #     flash("No selected file")
+        #     return redirect(request.url)
+        #
+        # if not allowed_file(file_x.filename):
+        #     flash("File type not allowed. Please upload a CSV or Parquet file.")
+        #     return redirect(request.url)
 
         log.info("Loading data")
         input_df = load_data(file_x)
@@ -405,18 +422,17 @@ def view():
             predictions=predicted_subtypes,
             plot_data=plot_data
         )
-
         # if user does not select file, browser also
         # submit an empty part without filename
-        if file_x.filename == "":
-            print("file empty")
-            flash("No selected file")
-            return redirect(request.url)
+        # if file_x.filename == "":
+        #     print("file empty")
+        #     flash("No selected file")
+        #     return redirect(request.url)
 
-        if file_x and allowed_file(file_x.filename):
-            # filename = secure_filename(file_x.filename)
-            # file_x.save(os.path.join(UPLOAD_FOLDER, filename))
-            # send_test_mail()
-            log.info("Printing predictions")
-            return render_template("temperature.html", notes=predictions)
+        # if file_x and allowed_file(file_x.filename):
+        #     # filename = secure_filename(file_x.filename)
+        #     # file_x.save(os.path.join(UPLOAD_FOLDER, filename))
+        #     # send_test_mail()
+        #     log.info("Printing predictions")
+        #     return render_template("temperature.html", notes=predictions)
     return render_template("upload_file.html")

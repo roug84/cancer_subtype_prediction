@@ -8,12 +8,13 @@ import os
 from dotenv import load_dotenv
 from views.index import bp as index_bp
 from views.upload_file import bp10
+# from roug_ml.configs.my_paths import MLFLOW_ENV_PATH
 
-load_dotenv()
 app = Flask(__name__)
 name = os.getenv("NAME")
 
-
+# load_dotenv(MLFLOW_ENV_PATH)
+load_dotenv("/home/hector/roug/cancer_subtype_prediction/roug_ml/roug_ml/configs/mlflow.env")
 app.secret_key = "secreta"  # Replace 'your_secret_key' with a real secret key
 
 # Logging Setup
@@ -31,4 +32,4 @@ app.register_blueprint(bp10)
 if __name__ == "__main__":
     # app.secret_key = os.urandom(12)
     # app.run(debug = True)
-    app.run(host="0.0.0.0", port="1000")
+    app.run(host="0.0.0.0", port="7040")

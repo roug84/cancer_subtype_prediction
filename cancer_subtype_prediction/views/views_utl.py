@@ -19,6 +19,7 @@ from werkzeug import datastructures
 import mlflow
 from configs import TCGA_DATA_PATH, data_path
 from etl import select_protein_coding_genes
+from beartype.typing import Union, List
 
 ALLOWED_EXTENSIONS = {
     "csv",
@@ -205,6 +206,79 @@ def get_best_run(experiment_name: str, metric_key: str) -> Tuple[str, dict]:
     return o_best_run_id, o_best_params
 
 
+def load_registered_models(
+        model_name_prefix: str = "cancer_subtype_predictor",
+        n_models: int = 10,
+        stage: str = "Production",
+        use_ensemble: bool = True,
+        docker: bool = True
+) -> Union[mlflow.pyfunc.PyFuncModel, List[mlflow.pyfunc.PyFuncModel]]:
+    """
+    Load registered model(s) from MLflow model registry
+
+    :param model_name_prefix: Prefix used when registering models
+    :param n_models: Number of models to load if using ensemble
+    :param stage: Model stage to load ('None', 'Staging', 'Production', 'Archived')
+    :param use_ensemble: If True, loads all ensemble models; if False, loads only the first model
+    :param docker: True if running in docker container
+
+    :return: Single model or list of models depending on use_ensemble parameter
+    """
+    try:
+        # Set MLflow tracking URI based on environment
+        if not docker:
+            mlflow.set_tracking_uri("http://localhost:8000")
+        else:
+            mlflow.set_tracking_uri("http://host.docker.internal:8000")
+
+        client = MlflowClient()
+
+        if use_ensemble:
+            models = []
+            for i in range(1, n_models + 1):
+                try:
+                    model_name = f"{model_name_prefix}_{i}"
+
+                    versions = client.get_latest_versions(model_name, stages=[stage])
+                    if not versions:
+                        print(f"No version found for {model_name} in {stage} stage")
+                        continue
+
+                    model_version = versions[0]
+
+                    # Option 1: Use sklearn.load_model directly
+                    model = mlflow.sklearn.load_model(
+                        model_uri=f"models:/{model_name}/{stage}"
+                    )
+
+                    # Option 2: If you need to use pyfunc.load_model, you can get the sklearn pipeline like this:
+                    # pyfunc_model = mlflow.pyfunc.load_model(f"models:/{model_name}/{stage}")
+                    # model = pyfunc_model._model_impl.python_model.model
+
+                    models.append(model)
+                    print(f"Loaded model {model_name} version {model_version.version} from {stage} stage")
+                except Exception as e:
+                    print(f"Failed to load model {model_name}: {str(e)}")
+
+            if not models:
+                raise ValueError(f"No models could be loaded for prefix '{model_name_prefix}'")
+            return models
+        else:
+            model_name = f"{model_name_prefix}_1"
+            versions = client.get_latest_versions(model_name, stages=[stage])
+            if not versions:
+                raise ValueError(f"No version found for {model_name} in {stage} stage")
+
+            model = mlflow.sklearn.load_model(
+                model_uri=f"models:/{model_name}/{stage}"
+            )
+            print(f"Loaded model {model_name} version {versions[0].version} from {stage} stage")
+            return model
+
+    except Exception as e:
+        log.error(f"Error loading model(s): {e}")
+        raise
+
 def load_model(
     docker: bool = True, mlflow_experiment_name: str = "TCGA_BRCA_vf_4"
 ) -> Pipeline:
@@ -220,7 +294,6 @@ def load_model(
         # Load the best model from mlflow
         log.info("connecting to mlflow")
         mlflow.set_tracking_uri("http://localhost:8000")
-
         best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
         return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
         # model_path = \

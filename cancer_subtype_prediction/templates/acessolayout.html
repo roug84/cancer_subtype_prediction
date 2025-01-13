@@ -4,7 +4,7 @@
     <title>TCGA cancer subtype prediction and explanation</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel = "icon" href = "{{ url_for('static', filename ='image/Logo_EngranevF.png') }}"/>
+    <link rel="icon" href="{{ url_for('static', filename='image/Logo_EngranevF.png') }}" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
@@ -24,8 +24,6 @@
         }
         .container {
             margin: 20px;
-        }
-        .container {
             padding: 20px;
             background-color: white; /* White background for content */
             color: #333; /* Dark text for readability */
@@ -39,7 +37,14 @@
             background-color: #007bff; /* Blue background */
             color: white; /* White text */
             padding: 10px 20px;
-            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header img {
+            max-width: 100px; /* Adjust the size as needed */
+            height: auto;
+            margin-right: 15px; /* Space between logo and text */
         }
         .navbar {
             overflow: hidden;
@@ -61,8 +66,11 @@
 </head>
 <body>
     <div class="header">
-        <h1>TCGA cancer subtype prediction and explanation</h1>
-        <h3>Welcome!</h3>
+        <img src="{{ url_for('static', filename='image/adn_nn.png') }}" alt="Logo">
+        <div>
+            <h1>TCGA cancer subtype prediction and explanation</h1>
+            <h3>Welcome!</h3>
+        </div>
     </div>
 
     <nav class="navbar">
@@ -70,7 +78,7 @@
         <a href="/upload_file">Predict cancer</a>
     </nav>
 
-   <div class="main-content">
+    <div class="main-content">
         <div class="container">
             {% block content %}
             {% endblock %}
