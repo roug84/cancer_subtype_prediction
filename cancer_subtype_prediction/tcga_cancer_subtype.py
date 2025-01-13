@@ -23,16 +23,15 @@ from sklearn.preprocessing import LabelEncoder
 import matplotlib.pyplot as plt
 
 from etl import select_protein_coding_genes, extract_X_y_from_dataframe
-from roug_ml.utl.mlflow_utils import load_top_models
-from etl import download_file_from_ftp
 from roug_ml.utl.dowload_utils import download_file
 from roug_ml.utl.paths_utl import create_dir
 from roug_ml.models.hyperoptimization import parallele_hyper_optim
 from roug_ml.utl.parameter_utils import generate_param_grid_with_different_size_layers
 from roug_ml.utl.parameter_utils import restructure_dict
-from roug_ml.utl.mlflow_utils import get_or_create_experiment
-from roug_ml.models.hyperoptimization import get_best_run_from_hyperoptim
-from roug_ml.utl.mlflow_utils import get_best_run, get_top_n_runs
+from roug_ml.models.hyperoptimization import get_or_create_experiment, get_best_run_from_hyperoptim
+from roug_ml.utl.mlflow_utils import (load_top_models, get_best_run, get_top_n_runs, register_n_top_models,
+                                      transition_models_to_staging, promote_models_to_production,
+                                      cleanup_model_versions)
 from roug_ml.utl.evaluation.multiclass import compute_multiclass_confusion_matrix
 from roug_ml.utl.evaluation.eval_utl import calc_loss_acc_val
 from roug_ml.models.feature_selection import (
@@ -214,6 +213,7 @@ class TCGASubtypePredictor:
         )
 
     def run(self):
+
         (
             tcga_target_gtex_samples,
             tcga_gtex_labels,
@@ -336,6 +336,19 @@ class TCGASubtypePredictor:
             "runs:/{}/pipeline".format(best_run_id)
         )
 
+        # Register top N models
+        registered_models = register_n_top_models(
+            experiment_name=self.mlflow_experiment_name,
+            metric_key="val_accuracy",
+            n=10,
+            model_name_prefix="cancer_subtype_predictor_ensemble",
+            force=True,
+        )
+
+        transition_models_to_staging("cancer_subtype_predictor_ensemble", 10)
+        promote_models_to_production("cancer_subtype_predictor_ensemble", 10)
+
+        cleanup_model_versions("cancer_subtype_predictor_ensemble", 10)
         # 5. Validate
         self.validate(x_test, y_test, self.label_mapping)
 
@@ -451,6 +464,7 @@ class TCGASubtypePredictor:
             # barplot(enr.res2d, title='KEGG', ofname='KEGG_enrichment_results')
 
         print("end")
+
 
     def collect_data(self):
         """
