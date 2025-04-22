@@ -1,7 +1,15 @@
+import logging
+
+log = logging.getLogger(__name__)  # noqa: E402
+
+logging.basicConfig(level=logging.INFO)
 import os
 
 import numpy as np
+import io
+from minio import Minio
 import pandas as pd
+
 import wget
 import requests
 
@@ -12,6 +20,60 @@ import gzip
 
 # from roug_ml.utl.paths_utl import create_dir
 # from roug_ml.utl.dowload_utils import download_file
+
+# def get_minio_client():
+#     """Initialize MinIO client with error handling"""
+#     try:
+#         client = Minio(
+#             "77.205.31.96:9000",
+#             access_key="kensou",
+#             secret_key="H03042020P16082022",
+#             secure=False
+#         )
+#         # Test connection
+#         client.list_buckets()
+#         return client
+#     except Exception as e:
+#         log.error(f"Failed to connect to MinIO: {str(e)}")
+#         raise
+def get_minio_client():
+    from minio import Minio
+    import logging
+
+    # List of endpoints to try, in order of preference
+    endpoints = [
+        "127.0.0.1:9000",  # Try localhost first
+        "172.17.0.1:9000",  # Docker bridge network
+        "172.20.10.2:9000",  # From your logs
+        "77.205.31.96:9000"  # Original external IP (as fallback)
+    ]
+
+    logger = logging.getLogger("etl")
+
+    # Credentials remain the same
+    access_key = "kensou"
+    secret_key = "H03042020P16082022"
+
+    # Try each endpoint until one works
+    for endpoint in endpoints:
+        try:
+            client = Minio(
+                endpoint,
+                access_key=access_key,
+                secret_key=secret_key,
+                secure=False
+            )
+            # Test the connection
+            client.list_buckets()
+            logger.info(f"Successfully connected to MinIO at {endpoint}")
+            return client
+        except Exception as e:
+            logger.warning(f"Failed to connect to MinIO at {endpoint}: {e}")
+            continue
+
+    # If we get here, all endpoints failed
+    logger.error("Failed to connect to any MinIO endpoint. Using local file operations.")
+    return None
 
 
 def create_dir(in_path: str, in_folder_name: str = "", in_exist_ok: bool = False) -> str:
@@ -111,6 +173,72 @@ def download_and_extract_protein_coding_genes(
         protein_coding_genes.to_csv(in_path_to_save_df)
 
     return protein_coding_genes
+
+
+def download_and_extract_protein_coding_genes_minio(
+        destination: str,
+        minio_client: Minio,
+        bucket_name: str = "cancer-subtype",
+        base_path: str = "TCGA_BRCA_vminio_postgre_2"
+) -> pd.DataFrame:
+    """
+    Downloads the GTF file for a specified GENCODE release version and extracts
+    protein-coding gene names, storing results in MinIO.
+
+    :param destination: Path to the GTF file
+    :param minio_client: Initialized MinIO client
+    :param bucket_name: Name of the MinIO bucket
+    :param base_path: Base path in the bucket
+    :return: DataFrame of protein-coding gene names
+    """
+    protein_coding_genes_file = f"{base_path}/protein_coding_genes.csv"
+
+    try:
+        # Try to get existing protein coding genes from MinIO
+        log.info("Attempting to load protein coding genes from MinIO")
+        data = minio_client.get_object(bucket_name, protein_coding_genes_file)
+        protein_coding_genes = pd.read_csv(io.BytesIO(data.read()))
+        log.info("Successfully loaded protein coding genes from MinIO")
+        return protein_coding_genes
+    except Exception as e:
+        log.info(f"Creating new protein coding genes list: {str(e)}")
+
+        try:
+            # Unzipping the file
+            if os.path.exists(destination):
+                log.info("Unzipping GTF file")
+                os.system(f"gunzip -f {destination}")
+            else:
+                raise FileNotFoundError(f"GTF file not found: {destination}")
+
+            # Extract gene names
+            gtf_file_path = destination.replace(".gz", "")
+            if not os.path.exists(gtf_file_path):
+                raise FileNotFoundError(f"Unzipped GTF file not found: {gtf_file_path}")
+
+            log.info("Extracting gene names from GTF file")
+            genes_list = extract_gene_names_from_gtf(gtf_file_path)
+            protein_coding_genes = pd.DataFrame(genes_list, columns=["gene_name"])
+
+            # Save to MinIO
+            log.info("Saving protein coding genes to MinIO")
+            csv_buffer = io.StringIO()
+            protein_coding_genes.to_csv(csv_buffer, index=False)
+            csv_bytes = csv_buffer.getvalue().encode('utf-8')
+
+            minio_client.put_object(
+                bucket_name,
+                protein_coding_genes_file,
+                io.BytesIO(csv_bytes),
+                len(csv_bytes),
+                'text/csv'
+            )
+            log.info("Successfully saved protein coding genes to MinIO")
+
+            return protein_coding_genes
+        except Exception as e:
+            log.error(f"Error processing GTF file: {str(e)}")
+            raise
 
 
 def ensembl_gene_to_protein_id(ensembl_gene_id: str) -> str:
@@ -235,6 +363,164 @@ def extract_gene_id_to_name_mapping(
     return df
 
 
+def extract_gene_id_to_name_mapping_minio(
+        in_gencode_gtf_gz_filepath: str,
+        minio_client: Minio,
+        bucket_name: str = "cancer-subtype",
+        base_path: str = "TCGA_BRCA_vminio_postgre_2"
+) -> pd.DataFrame:
+    """
+    Downloads the GTF file for a specified GENCODE release version and extracts a
+    mapping from Ensembl gene IDs to gene names. Stores the mapping in MinIO.
+
+    :param in_gencode_gtf_gz_filepath: path where .gz file is stored
+    :param minio_client: Initialized MinIO client
+    :param bucket_name: Name of the MinIO bucket
+    :param base_path: Base path in the bucket
+    :return: DataFrame mapping Ensembl gene IDs to gene names.
+    """
+    mapping_file = f"{base_path}/all_gene_maping_Ensembl_gene_name.csv"
+
+    try:
+        log.info("Attempting to load existing mapping from MinIO")
+        data = minio_client.get_object(bucket_name, mapping_file)
+        df = pd.read_csv(io.BytesIO(data.read()))
+        log.info("Successfully loaded mapping from MinIO")
+        return df
+    except Exception as e:
+        log.info(f"Creating new mapping file: {str(e)}")
+        # If file doesn't exist in MinIO, create it
+        os.system(f"gunzip {in_gencode_gtf_gz_filepath}")
+
+        gtf_file_path = in_gencode_gtf_gz_filepath.replace(".gz", "")
+        gene_id_to_name = {}
+
+        with open(gtf_file_path, "r") as file:
+            for line in file:
+                if line.startswith("#"):
+                    continue
+                fields = line.strip().split("\t")
+                if fields[2] == "gene":
+                    info = {
+                        x.split()[0]: x.split()[1].replace('"', "").replace(";", "")
+                        for x in fields[8].split("; ")
+                    }
+                    gene_id_to_name[info["gene_id"]] = info["gene_name"]
+
+        df = pd.DataFrame(
+            list(gene_id_to_name.items()), columns=["Gene ID", "Gene Name"]
+        )
+
+        # Save to MinIO
+        try:
+            log.info("Saving mapping to MinIO")
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            csv_bytes = csv_buffer.getvalue().encode('utf-8')
+
+            minio_client.put_object(
+                bucket_name,
+                mapping_file,
+                io.BytesIO(csv_bytes),
+                len(csv_bytes),
+                'text/csv'
+            )
+            log.info("Successfully saved mapping to MinIO")
+        except Exception as e:
+            log.error(f"Failed to save mapping to MinIO: {str(e)}")
+            raise
+
+        return df
+
+def save_to_minio(df: pd.DataFrame, bucket_name: str, object_name: str, minio_client: Minio):
+    """Save DataFrame to MinIO"""
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+    csv_bytes = csv_buffer.getvalue().encode('utf-8')
+
+    minio_client.put_object(
+        bucket_name,
+        object_name,
+        io.BytesIO(csv_bytes),
+        len(csv_bytes),
+        'text/csv'
+    )
+
+
+import logging
+import os
+import pandas as pd
+
+log = logging.getLogger(__name__)
+
+def select_protein_coding_genes_minio(
+    results_path: str,
+    in_tcga_target_gtex_samples: pd.DataFrame,
+    gencode_release: int,
+    in_gencode_gtf_gz_filepath: str
+) -> pd.DataFrame:
+    """
+    Select protein coding genes using MinIO storage.
+    """
+    minio_client = get_minio_client()
+
+    log.info("Extracting gene ID to name mapping from MinIO")
+    all_genes_mapping = extract_gene_id_to_name_mapping_minio(
+        in_gencode_gtf_gz_filepath=in_gencode_gtf_gz_filepath,
+        minio_client=minio_client
+    )
+
+    # Ensure "Gene ID" is cleaned (remove version numbers like .1, .2, etc.)
+    log.info("Cleaning Gene ID formatting")
+    all_genes_mapping["Gene ID"] = all_genes_mapping["Gene ID"].str.split(".").str[0]
+
+    # Load protein-coding genes from MinIO (previously done via local download)
+    log.info("Downloading protein coding genes list from MinIO")
+    protein_coding_genes = download_and_extract_protein_coding_genes_minio(
+        destination=in_gencode_gtf_gz_filepath,
+        minio_client=get_minio_client(),
+        bucket_name="cancer-subtype",  # Optional if you want to use default
+        base_path="TCGA_BRCA_vminio_postgre_2"  # Optional if you want to use default
+    )
+
+    # Keep only protein-coding genes
+    log.info("Filtering for protein coding genes")
+    all_genes_mapping = all_genes_mapping[
+        all_genes_mapping["Gene Name"].isin(protein_coding_genes["gene_name"])
+    ]
+
+    # Remove duplicates and sort
+    columns_to_keep = sorted(all_genes_mapping["Gene ID"].unique())
+
+    # Ensure column names in the input DataFrame match Ensembl IDs without version numbers
+    log.info("Cleaning input dataframe column names")
+    in_tcga_target_gtex_samples.columns = [
+        col.split(".")[0] for col in in_tcga_target_gtex_samples.columns
+    ]
+
+    # Check for missing genes before filtering
+    missing_columns = [
+        col for col in columns_to_keep if col not in in_tcga_target_gtex_samples.columns
+    ]
+
+    log.info(f"Number of missing columns: {len(missing_columns)}")
+    if missing_columns:
+        log.info(f"First 10 missing columns: {missing_columns[:10]}")
+
+    # Remove missing columns to avoid errors
+    columns_to_keep_updated = [
+        col for col in columns_to_keep if col in in_tcga_target_gtex_samples.columns
+    ]
+
+    # Filter DataFrame to keep only selected protein-coding genes
+    log.info("Filtering dataframe to retain protein coding genes")
+    filtered_df = in_tcga_target_gtex_samples[columns_to_keep_updated].copy()
+
+    log.info("Protein coding genes selection completed")
+    return filtered_df
+
+
+
 def select_protein_coding_genes(
     results_path,
     in_tcga_target_gtex_samples: pd.DataFrame,
@@ -280,11 +566,14 @@ def select_protein_coding_genes(
     )
 
     # Extract the mapping of all genes (including non-protein coding)
-    all_genes_mapping = extract_gene_id_to_name_mapping(
-        in_path_to_save_df=os.path.join(
-            results_path, "all_genes_mapping" + str(gencode_release) + ".csv"
-        ),
+    all_genes_mapping = extract_gene_id_to_name_mapping_minio(
+        # in_path_to_save_df=os.path.join(
+        #     results_path, "all_genes_mapping" + str(gencode_release) + ".csv"
+        # ),
         in_gencode_gtf_gz_filepath=in_gencode_gtf_gz_filepath,
+        minio_client=get_minio_client(),
+        bucket_name = "cancer-subtype",  # Optional if you want to use default
+        base_path = "TCGA_BRCA_vminio_postgre_2"  # Optional if you want to use default
     )
 
     # Remove version: for example .1 .2 etc

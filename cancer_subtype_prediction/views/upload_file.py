@@ -7,8 +7,11 @@ logging.basicConfig(level=logging.INFO)
 from views.views_utl import (
     load_data,
     select_protein_coding_genes_deploy,
+    select_protein_coding_genes_deploy_minio,
     load_explainer_label_mapping_selected_feature_names_feature_names,
+    load_explainer_label_mapping_selected_feature_names_feature_names_minio,
     load_gene_id_to_name_map,
+    load_gene_id_to_name_map_minio,
     get_explanation_for_class,
     load_model,
     allowed_file,
@@ -29,7 +32,7 @@ from etl import extract_X_y_from_dataframe
 from configs import TCGA_RESULTS_PATH
 import gseapy as gp
 import matplotlib
-matplotlib.use('TkAgg')  # Use the Tkinter backend
+matplotlib.use('Agg')  # Use the Tkinter backend TkAgg
 
 unique_cancer_types = [
     "GBM",
@@ -75,6 +78,30 @@ docker = False
 bp10 = Blueprint("bp10", __name__, template_folder="templates")
 
 
+def predict_deployed_minio(
+    input_df: pd.DataFrame,
+    pipeline: Pipeline,
+    results_path: str,
+    feature_names: List[str],
+) -> Tuple[np.ndarray, pd.DataFrame, np.ndarray]:
+    """
+    Predicts using MinIO storage
+    """
+    log.info("Preparing data")
+
+    df_protein_coding_genes = select_protein_coding_genes_deploy_minio(
+        input_df=input_df,
+        results_path=results_path
+    )
+
+    # Reorder the columns in in_df based on feature_names
+    df_protein_coding_genes_ordered = df_protein_coding_genes[feature_names]
+
+    x_test, _ = extract_X_y_from_dataframe(df_protein_coding_genes_ordered, None, None)
+    predictions = pipeline.predict(x_test)
+
+    return predictions, df_protein_coding_genes_ordered, x_test
+
 def predict_deployed(
     input_df: pd.DataFrame,
     pipeline: Pipeline,
@@ -98,7 +125,7 @@ def predict_deployed(
     """
     log.info("Preparing data")
 
-    df_protein_coding_genes = select_protein_coding_genes_deploy(
+    df_protein_coding_genes = select_protein_coding_genes_deploy_minio(
         input_df=input_df, results_path=results_path
     )
 
@@ -183,7 +210,7 @@ def explain_deployed(
     top_features = np.array(selected_feature_names)[top_indices]
     top_shap_values = mean_abs_shap_values[top_indices]
 
-    gene_id_to_name_map = load_gene_id_to_name_map(results_path)
+    gene_id_to_name_map = load_gene_id_to_name_map_minio(results_path)
     gene_names = [
         gene_id_to_name_map.get(col.split(".")[0], col) for col in top_features
     ]
@@ -226,7 +253,7 @@ def enrichment_analysis_deployed(
 
     """
     log.info("Ensembl to gene id mapping")
-    gene_id_to_name_map = load_gene_id_to_name_map(results_path)
+    gene_id_to_name_map = load_gene_id_to_name_map_minio(results_path)
 
     df_htmls = []
     for _ in range(1):
@@ -321,7 +348,8 @@ def view():
                 n_models=10,
                 stage="Production",
                 use_ensemble=False,
-                docker = docker
+                docker = docker,
+                ec2_ip="35.180.253.157"
         )
         log.info("model loaded")
 
@@ -334,7 +362,7 @@ def view():
             feature_names,
             explainer_loaded,
             inputs_stats_summary_df
-        ) = load_explainer_label_mapping_selected_feature_names_feature_names(
+        ) = load_explainer_label_mapping_selected_feature_names_feature_names_minio(
             res_path=results_path
         )
 
@@ -351,6 +379,7 @@ def view():
 
         log.info("Loading data")
         input_df = load_data(file_x)
+        log.info("Data loaded successfully")
 
         log.info("Checking data")
         # Check genes are Ensembl Gene IDs
@@ -375,16 +404,20 @@ def view():
 
         train_summary_df = inputs_stats_summary_df[selected_feature_names]
         new_inputs_summary_df = input_df[selected_feature_names].describe()
-
+        log.info("Correlating data")
         plot_data = plot_corr_data(train_summary_df, new_inputs_summary_df)
+        log.info("Data correlation completed")
 
-        predictions, df_protein_coding_genes_ordered, x_test = predict_deployed(
+        log.info("Start prediction")
+        predictions, df_protein_coding_genes_ordered, x_test = predict_deployed_minio(
             input_df=input_df,
             pipeline=pipeline,
             results_path=results_path,
             feature_names=feature_names,
         )
+        log.info("Prediction completed successfully")
 
+        log.info("Explaining deployed")
         shap_html, shap_values = explain_deployed(
             df_protein_coding_genes_ordered=df_protein_coding_genes_ordered,
             feature_names=feature_names,
@@ -394,10 +427,13 @@ def view():
             results_path=results_path,
             explainer_loaded=explainer_loaded,
         )
+        log.info("Explainer completed")
+
         shap_html["data"][0]["x"].reverse()
         shap_html["data"][0]["y"].reverse()
         [print(x) for x in [shap_html["data"][0]["x"][0:50]]]
 
+        log.info("Start Enrichment")
         df_htmls = enrichment_analysis_deployed(
             in_prediction=predictions[0],
             loaded_label_mapping=loaded_label_mapping,
@@ -411,6 +447,7 @@ def view():
                 # "Reactome_2016"
             ],
         )
+        log.info("Engichment completed")
 
         predicted_subtypes = [
             loaded_label_mapping[prediction] for prediction in predictions

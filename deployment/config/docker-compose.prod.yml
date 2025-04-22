@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: ..  # This will point to the deployment root
+      dockerfile: docker/Dockerfile
+    ports:
+      - "7040:7040"
+    environment:
+      - FLASK_APP=cancer_subtype_prediction/tcga_app.py
+      - FLASK_ENV=production
+      - PYTHONPATH=/app:/app/roug_ml:/app/cancer_subtype_prediction
+      - MINIO_ENDPOINT=77.205.31.96:9000
+      - MINIO_ACCESS_KEY=kensou
+      - MINIO_SECRET_KEY=H03042020P16082022
+      - MLFLOW_S3_ENDPOINT_URL=http://35.180.253.157:9000
+    user: appuser
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

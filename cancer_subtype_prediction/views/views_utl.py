@@ -13,19 +13,23 @@ import pickle
 from sklearn.pipeline import Pipeline
 import numpy as np
 import pandas as pd
-from beartype.typing import Tuple, List
+from beartype.typing import Tuple, List, Optional
 from mlflow import MlflowClient
 from werkzeug import datastructures
 import mlflow
 from configs import TCGA_DATA_PATH, data_path
-from etl import select_protein_coding_genes
+from etl import select_protein_coding_genes, select_protein_coding_genes_minio
 from beartype.typing import Union, List
+
+from etl import get_minio_client
 
 ALLOWED_EXTENSIONS = {
     "csv",
     "parquet",
 }
 
+from minio import Minio
+import io
 
 def load_data(file_x: datastructures.FileStorage) -> pd.DataFrame:
     """
@@ -47,7 +51,7 @@ def select_protein_coding_genes_deploy(input_df: pd.DataFrame, results_path: str
     gtf_dir = os.path.join(TCGA_DATA_PATH, "gtf_files")
     destination = os.path.join(gtf_dir, f"gencode.v{gencode_release}.annotation.gtf.gz")
     log.info("select protein coding genes")
-    protein_coding_genes = select_protein_coding_genes(
+    protein_coding_genes = select_protein_coding_genes_minio(
         results_path=results_path,
         in_tcga_target_gtex_samples=input_df,
         gencode_release=gencode_release,
@@ -55,6 +59,54 @@ def select_protein_coding_genes_deploy(input_df: pd.DataFrame, results_path: str
     )
     return protein_coding_genes
 
+
+def select_protein_coding_genes_deploy_minio(input_df: pd.DataFrame, results_path: str) -> pd.DataFrame:
+    """
+    Select protein coding genes using MinIO storage
+    """
+    gencode_release = 38
+    gtf_dir = os.path.join(TCGA_DATA_PATH, "gtf_files")
+    destination = os.path.join(gtf_dir, f"gencode.v{gencode_release}.annotation.gtf.gz")
+    log.info("select protein coding genes")
+
+    protein_coding_genes = select_protein_coding_genes_minio(
+        results_path=results_path,
+        in_tcga_target_gtex_samples=input_df,
+        gencode_release=gencode_release,
+        in_gencode_gtf_gz_filepath=destination
+    )
+    return protein_coding_genes
+
+def load_explainer_label_mapping_selected_feature_names_feature_names_minio(
+    res_path: str,
+) -> Tuple:
+    """
+    Load saved shap_values, label mapping, etc from MinIO
+    """
+    minio_client = get_minio_client()
+    bucket_name = "cancer-subtype"
+    base_path = "TCGA_BRCA_vminio_postgre_2"
+
+    # Function to load pickle files from MinIO
+    def load_pickle_from_minio(file_path):
+        data = minio_client.get_object(bucket_name, f"{base_path}/{file_path}")
+        return pickle.load(io.BytesIO(data.read()))
+
+    # Function to load CSV files from MinIO
+    def load_csv_from_minio(file_path):
+        data = minio_client.get_object(bucket_name, f"{base_path}/{file_path}")
+        return pd.read_csv(io.BytesIO(data.read()))
+
+    # Load all required files
+    shap_values = load_pickle_from_minio("shap_values.pkl")
+    explainer = load_pickle_from_minio("explainer.pkl")
+    loaded_label_mapping = load_pickle_from_minio("label_mapping.pkl")
+    selected_feature_names = load_pickle_from_minio("selected_feature_names.pkl")
+    feature_names = load_pickle_from_minio("feature_names.pkl")
+    inputs_stats_summary_df = load_csv_from_minio("inputs_stats_summary.csv")
+
+    return shap_values, loaded_label_mapping, selected_feature_names, feature_names, explainer, \
+           inputs_stats_summary_df
 
 def load_explainer_label_mapping_selected_feature_names_feature_names(
     res_path: str,
@@ -113,6 +165,28 @@ def load_gene_id_to_name_map(results_path: str) -> dict:
     gene_id_to_name_df = pd.read_csv(
         os.path.join(results_path, "all_gene_maping_Ensembl_gene_name.csv")
     )
+
+    log.info("Removing version .")
+    gene_id_to_name_df["Gene ID"] = gene_id_to_name_df["Gene ID"].str.split(".").str[0]
+
+    log.info("Creating dict for mapping")
+    gene_id_to_name_map = dict(
+        zip(gene_id_to_name_df["Gene ID"], gene_id_to_name_df["Gene Name"])
+    )
+
+    return gene_id_to_name_map
+
+def load_gene_id_to_name_map_minio(results_path: str) -> dict:
+    """
+    Load and process gene mapping data from MinIO.
+    """
+    minio_client = get_minio_client()
+    bucket_name = "cancer-subtype"
+    file_path = "TCGA_BRCA_vminio_postgre_2/all_gene_maping_Ensembl_gene_name.csv"
+
+    log.info("Loading Ensembl to gene name mapping from MinIO")
+    data = minio_client.get_object(bucket_name, file_path)
+    gene_id_to_name_df = pd.read_csv(io.BytesIO(data.read()))
 
     log.info("Removing version .")
     gene_id_to_name_df["Gene ID"] = gene_id_to_name_df["Gene ID"].str.split(".").str[0]
@@ -211,7 +285,8 @@ def load_registered_models(
         n_models: int = 10,
         stage: str = "Production",
         use_ensemble: bool = True,
-        docker: bool = True
+        docker: bool = True,
+        ec2_ip: Optional[str] = None
 ) -> Union[mlflow.pyfunc.PyFuncModel, List[mlflow.pyfunc.PyFuncModel]]:
     """
     Load registered model(s) from MLflow model registry
@@ -221,13 +296,23 @@ def load_registered_models(
     :param stage: Model stage to load ('None', 'Staging', 'Production', 'Archived')
     :param use_ensemble: If True, loads all ensemble models; if False, loads only the first model
     :param docker: True if running in docker container
+    :param ec2_ip: IP address of EC2 instance running MLflow
 
     :return: Single model or list of models depending on use_ensemble parameter
     """
     try:
         # Set MLflow tracking URI based on environment
         if not docker:
-            mlflow.set_tracking_uri("http://localhost:8000")
+            # mlflow.set_tracking_uri("http://localhost:8000")
+            if ec2_ip:
+                mlflow.set_tracking_uri(f"http://{ec2_ip}:8001")
+                os.environ['MLFLOW_S3_ENDPOINT_URL'] = f"http://{ec2_ip}:9002"
+            else:
+                mlflow.set_tracking_uri("http://localhost:8000")
+                os.environ['MLFLOW_S3_ENDPOINT_URL'] = "http://localhost:9000"
+            os.environ['AWS_ACCESS_KEY_ID'] = "kensou"
+            os.environ['AWS_SECRET_ACCESS_KEY'] = "H03042020P16082022"
+
         else:
             mlflow.set_tracking_uri("http://host.docker.internal:8000")
 
@@ -246,7 +331,7 @@ def load_registered_models(
 
                     model_version = versions[0]
 
-                    # Option 1: Use sklearn.load_model directly
+                    #  Use sklearn.load_model
                     model = mlflow.sklearn.load_model(
                         model_uri=f"models:/{model_name}/{stage}"
                     )
@@ -280,12 +365,16 @@ def load_registered_models(
         raise
 
 def load_model(
-    docker: bool = True, mlflow_experiment_name: str = "TCGA_BRCA_vf_4"
+    docker: bool = True, mlflow_experiment_name: str = "TCGA_BRCA_vf_4",
+        ec2_ip: Optional[str] = None
+
 ) -> Pipeline:
     """
     Load ML pipeline already trained
     :param docker: True is you are running into a docker container
     :param mlflow_experiment_name: mlflow experiment name
+    :param ec2_ip: IP address of EC2 instance running MLflow
+
     :return: ML Pipeline
     """
     log.info("get_best_run")
@@ -293,7 +382,15 @@ def load_model(
     if not docker:
         # Load the best model from mlflow
         log.info("connecting to mlflow")
-        mlflow.set_tracking_uri("http://localhost:8000")
+        # mlflow.set_tracking_uri("http://localhost:8000")
+        if ec2_ip:
+            mlflow.set_tracking_uri(f"http://{ec2_ip}:8001")
+            os.environ['MLFLOW_S3_ENDPOINT_URL'] = f"http://{ec2_ip}:9002"
+        else:
+            mlflow.set_tracking_uri("http://localhost:8000")
+            os.environ['MLFLOW_S3_ENDPOINT_URL'] = "http://localhost:9000"
+        os.environ['AWS_ACCESS_KEY_ID'] = "kensou"
+        os.environ['AWS_SECRET_ACCESS_KEY'] = "H03042020P16082022"
         best_run_id, best_params = get_best_run(mlflow_experiment_name, "val_accuracy")
         return mlflow.sklearn.load_model("runs:/{}/pipeline".format(best_run_id))
         # model_path = \

@@ -1,0 +1,69 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: mlflow_postgres
+    environment:
+      POSTGRES_USER: mlflow_user
+      POSTGRES_PASSWORD: H03042020P16082022
+      POSTGRES_DB: mlflow_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - mlflow_network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mlflow_user"]
+      interval: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    container_name: mlflow_minio
+    environment:
+      MINIO_ROOT_USER: kensou
+      MINIO_ROOT_PASSWORD: H03042020P16082022
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    command: server /data --console-address ":9001"
+    networks:
+      - mlflow_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: mlflow_server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=kensou
+      - AWS_SECRET_ACCESS_KEY=H03042020P16082022
+      - MLFLOW_TRACKING_URI=postgresql://mlflow_user:H03042020P16082022@postgres/mlflow_db
+    ports:
+      - "8001:8000"
+    networks:
+      - mlflow_network
+
+networks:
+  mlflow_network:
+    name: mlflow_network
+
+volumes:
+  postgres_data:
+  minio_data:

@@ -45,6 +45,7 @@ from roug_ml.utl.parameter_utils import restructure_dict
 from roug_ml.utl.paths_utl import create_dir
 from views.views_utl import get_explanation_for_class
 from sklearn.utils.class_weight import compute_class_weight
+from etl import get_minio_client
 
 
 # print(TCGA_DATA_PATH)
@@ -59,7 +60,7 @@ def feature_inspection(train_df, test_sample):
 
 
 def compute_shap_values_for_ensemble(
-    models: List[Tuple], X: np.ndarray, feature_names: List[str]
+        models: List[Tuple], X: np.ndarray, feature_names: List[str]
 ) -> Tuple[np.ndarray, List[str]]:
     """
     Compute SHAP values for an ensemble of models.
@@ -82,19 +83,29 @@ def compute_shap_values_for_ensemble(
         # Extracting the nn
         nn_model = model[-1].nn_model
 
+        # If model is using DataParallel, get the underlying module
+        if hasattr(nn_model, 'module'):
+            nn_model = nn_model.module
+
         # Ensure model is in evaluation mode
         nn_model.eval()
 
-        # Convert data to PyTorch tensors
-        x_val_tensor = torch.tensor(x_val, dtype=torch.float32)
+        # Move model to CPU
+        nn_model = nn_model.cpu()
+
+        # Convert data to PyTorch tensors on CPU
+        x_val_tensor = torch.tensor(x_val, dtype=torch.float32)  # This will be on CPU by default
 
         explainer = shap.DeepExplainer(nn_model, x_val_tensor.unsqueeze(1))
-
         shap_values = explainer.shap_values(x_val_tensor.unsqueeze(1))
+
+        # Move model back to GPU if needed for other operations
+        if torch.cuda.is_available():
+            nn_model = nn_model.cuda()
 
         all_shap_values.append(shap_values)
 
-    # Combine or average the SHAP values across the ensemble^p==============================
+    # Combine or average the SHAP values across the ensemble
     avg_shap_values = np.mean(all_shap_values, axis=0)
 
     return avg_shap_values, selected_feature_names
@@ -204,6 +215,12 @@ class TCGASubtypePredictor:
         mlflow.set_tracking_uri("http://localhost:8000")
         # mlflow.set_tracking_uri("http://public_ip_where_ml_flow_is_running:8000") <- public ip of VM
         # do not forget to do: export PATH=$PATH:/home/ubuntu/.local/bin in VM
+        # Ensure environment variables are set for MinIO/S3
+        os.environ["AWS_ACCESS_KEY_ID"] = "kensou"  # Replace with your actual access key
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "H03042020P16082022"  # Replace with your actual secret key
+
+        # If you're using MinIO, set the S3 endpoint URL
+        os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://127.0.0.1:9000"  # Adjust if needed
 
         # mlflow.set_tracking_uri('http://host.docker.internal:8000')
         self.mlflow_experiment_id = get_or_create_experiment(
@@ -368,12 +385,15 @@ class TCGASubtypePredictor:
         stats_df.to_csv()
 
         stats_df.to_csv(self.inputs_stats_summary_path )
+        minio_client = get_minio_client()
 
         gene_id_to_name_df = extract_gene_id_to_name_mapping_minio(
-            in_path_to_save_df=os.path.join(
-                self.results_path, "all_gene_maping_Ensembl_gene_name.csv"
-            ),
+            # in_path_to_save_df=os.path.join(
+            #     self.results_path, "all_gene_maping_Ensembl_gene_name.csv"
+            # ),
             in_gencode_gtf_gz_filepath=gencode_gtf_gz_filepath,
+            minio_client=minio_client
+
         )  # Change the in_gencode_release if necessary
 
         gene_id_to_name_df["Gene ID"] = (
@@ -465,51 +485,29 @@ class TCGASubtypePredictor:
 
     def collect_data(self):
         """
-        The first step in any machine learning pipeline is data collection. This may involve
-        gathering data from various sources like databases, files, APIs, web scraping, or even
-        creating synthetic data.
+        Efficiently collects and processes TCGA genomic data using preprocessed chunks.
+        Returns the same data structure as the original method.
         """
-        rsem_gene_tpm_gz_file_path = os.path.join(
-            TCGA_DATA_PATH, "TcgaTargetGtex_rsem_gene_tpm.gz"
-        )
-        rsem_gene_tpm_parquet_file_path = os.path.join(
-            TCGA_DATA_PATH, "TcgaTargetGtex_rsem_gene_tpm.parquet"
-        )
-        phenotype_gz_file_path = os.path.join(
-            TCGA_DATA_PATH, "TcgaTargetGTEX_phenotype.gz"
-        )
-        tcga_subtypes_file_path = os.path.join(
-            TCGA_DATA_PATH, "TCGASubtype.20170308.tsv.gz"
-        )
+        # Define file paths
+        chunks_dir = os.path.join(TCGA_DATA_PATH, "processed_chunks")
+        phenotype_gz_file_path = os.path.join(TCGA_DATA_PATH, "TcgaTargetGTEX_phenotype.gz")
+        tcga_subtypes_file_path = os.path.join(TCGA_DATA_PATH, "TCGASubtype.20170308.tsv.gz")
         survival_supplement_file_path = os.path.join(
             TCGA_DATA_PATH, "Survival_SupplementalTable_S1_20171025_xena_sp"
         )
 
-        # Convert to float32, Transpose to ML style rows = samples and hdf for significantly faster
-        # reading
-        if not os.path.exists(rsem_gene_tpm_parquet_file_path):
-            if not os.path.exists(rsem_gene_tpm_gz_file_path):
-                # Download raw files from xena
-                # download_file_from_url(
-                #     url="https://toil-xena-hub.s3.us-east-1.amazonaws.com/download/TcgaTargetGtex_rsem_gene_tpm.gz",
-                #     destination=rsem_gene_tpm_gz_file_path,
-                # )
-                download_file("https://toil-xena-hub.s3.us-east-1.amazonaws.com/download/TcgaTargetGtex_rsem_gene_tpm.gz",
-                              file_path=rsem_gene_tpm_gz_file_path)
-            data = pd.read_csv(
-                rsem_gene_tpm_gz_file_path, index_col=0, compression="gzip", sep="\t"
-            )
-            tcga_target_gtex_samples = data.T
-            # Save the dataframe to a parquet file
-            tcga_target_gtex_samples.to_parquet(rsem_gene_tpm_parquet_file_path)
-        else:
-            tcga_target_gtex_samples = pd.read_parquet(rsem_gene_tpm_parquet_file_path)
+        # Step 1: Load the preprocessed expression data from chunks
+        print("Loading preprocessed expression data chunks...")
+        tcga_target_gtex_samples = self.load_processed_chunks(chunks_dir)
 
+        # Step 2: Load phenotype data
+        print("Loading phenotype data...")
         if not os.path.exists(phenotype_gz_file_path):
             download_file(
                 in_url="https://toil-xena-hub.s3.us-east-1.amazonaws.com/download/TcgaTargetGTEX_phenotype.txt.gz",
                 file_path=phenotype_gz_file_path,
             )
+
         tcga_gtex_labels = pd.read_table(
             phenotype_gz_file_path,
             compression="gzip",
@@ -519,9 +517,9 @@ class TCGASubtypePredictor:
             index_col=0,
             dtype="str",
         ).sort_index(axis="index")
-        print("tcga_gtex_labels")
-        [print(x) for x in tcga_gtex_labels.columns]
 
+        # Step 3: Load molecular subtype data
+        print("Loading molecular subtype data...")
         if not os.path.exists(tcga_subtypes_file_path):
             download_file(
                 in_url="https://tcga-pancan-atlas-hub.s3.us-east-1.amazonaws.com/download/TCGASubtype.20170308.tsv.gz",
@@ -537,9 +535,9 @@ class TCGASubtypePredictor:
             index_col=0,
             dtype="str",
         ).sort_index(axis="index")
-        print("molecular_subtype")
-        [print(x) for x in molecular_subtype.columns]
 
+        # Step 4: Load survival data
+        print("Loading survival data...")
         if not os.path.exists(survival_supplement_file_path):
             download_file(
                 in_url="https://tcga-pancan-atlas-hub.s3.us-east-1.amazonaws.com/download/Survival_SupplementalTable_S1_20171025_xena_sp",
@@ -554,9 +552,15 @@ class TCGASubtypePredictor:
             index_col=0,
             dtype="str",
         ).sort_index(axis="index")
-        print("survival_labels_tcga")
 
-        [print(x) for x in survival_labels_tcga.columns]
+        # Try to filter survival data for relevant cancer types
+        for col in survival_labels_tcga.columns:
+            if any(term in col.lower() for term in ['cancer', 'type']):
+                if any(cancer in survival_labels_tcga[col].values for cancer in self.cancer_types):
+                    survival_labels_tcga = survival_labels_tcga[
+                        survival_labels_tcga[col].isin(self.cancer_types)
+                    ]
+                    break
 
         return (
             tcga_target_gtex_samples,
@@ -564,6 +568,37 @@ class TCGASubtypePredictor:
             molecular_subtype,
             survival_labels_tcga,
         )
+
+    def load_processed_chunks(self, chunks_dir):
+        """
+        Load preprocessed data chunks and combine them.
+
+        Args:
+            chunks_dir: Directory containing the chunk files
+
+        Returns:
+            Combined DataFrame with all the expression data
+        """
+        import glob
+
+        # Get list of all chunk files
+        chunk_files = sorted(glob.glob(os.path.join(chunks_dir, "expression_chunk_*.parquet")))
+
+        print(f"Found {len(chunk_files)} chunk files")
+
+        # Read and combine chunks
+        dfs = []
+        for file in chunk_files:
+            print(f"Loading {file}...")
+            df = pd.read_parquet(file)
+            dfs.append(df)
+
+        # Combine all chunks
+        print("Combining chunks...")
+        combined_df = pd.concat(dfs, axis=1)
+
+        print(f"Combined data shape: {combined_df.shape}")
+        return combined_df
 
     def preprocess_data(
         self,
@@ -939,7 +974,6 @@ class TCGASubtypePredictor:
         :returns self.shap_values: SHAP values for each class.
         """
 
-        # Compute SHAP values for the ensemble
         self.ensemble_shap_values, self.ensemble_selected_feature_names = (
             compute_shap_values_for_ensemble(
                 self.loaded_models, X=x_test, feature_names=feature_names
@@ -960,11 +994,16 @@ class TCGASubtypePredictor:
         # Extracting the nn
         nn_model = self.pipeline[-1].nn_model
 
-        # Ensure model is in evaluation mode
-        nn_model.eval()
+        # If model is using DataParallel, get the underlying module
+        if hasattr(nn_model, 'module'):
+            nn_model = nn_model.module
 
-        # Convert data to PyTorch tensors
-        self.x_val_tensor = torch.tensor(x_val, dtype=torch.float32)
+        # Ensure model is in evaluation mode and move to CPU
+        nn_model.eval()
+        nn_model = nn_model.cpu()
+
+        # Convert data to PyTorch tensors on CPU
+        self.x_val_tensor = torch.tensor(x_val, dtype=torch.float32)  # This will be on CPU by default
 
         explainer = shap.DeepExplainer(nn_model, self.x_val_tensor.unsqueeze(1))
 
@@ -972,6 +1011,10 @@ class TCGASubtypePredictor:
             pickle.dump(explainer, file)
 
         self.shap_values = explainer.shap_values(self.x_val_tensor.unsqueeze(1))
+
+        # Move model back to GPU if needed for other operations
+        if torch.cuda.is_available():
+            nn_model = nn_model.cuda()
 
         # Assuming shap_values is your computed SHAP values
         with open(self.shap_path, "wb") as f:
@@ -999,6 +1042,6 @@ if __name__ == "__main__":
     #            'READ', 'LGG', 'DLBC', 'KICH', 'UCS', 'ACC', 'PCPG', 'UVM']
     c_types = ["BRCA"]
     analysis = TCGASubtypePredictor(
-        in_mlflow_experiment_name="TCGA_BRCA_vminio_postgre_3x", in_cancer_types=c_types
+        in_mlflow_experiment_name="TCGA_BRCA_vminio_postgre_3xx", in_cancer_types=c_types
     )
     analysis.run()
