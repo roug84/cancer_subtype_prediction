@@ -349,7 +349,7 @@ def view():
                 stage="Production",
                 use_ensemble=False,
                 docker = docker,
-                ec2_ip="35.180.253.157"
+                ec2_ip=None,#"35.180.253.157"
         )
         log.info("model loaded")
 

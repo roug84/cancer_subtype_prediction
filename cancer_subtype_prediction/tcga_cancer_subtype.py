@@ -45,6 +45,7 @@ from roug_ml.utl.parameter_utils import restructure_dict
 from roug_ml.utl.paths_utl import create_dir
 from views.views_utl import get_explanation_for_class
 from sklearn.utils.class_weight import compute_class_weight
+from etl import get_minio_client
 
 
 # print(TCGA_DATA_PATH)
@@ -81,12 +82,14 @@ def compute_shap_values_for_ensemble(
     for model in models:
         # Extracting the nn
         nn_model = model[-1].nn_model
-
         # Ensure model is in evaluation mode
         nn_model.eval()
 
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        nn_model = nn_model.to(device)
+
         # Convert data to PyTorch tensors
-        x_val_tensor = torch.tensor(x_val, dtype=torch.float32)
+        x_val_tensor = torch.tensor(x_val, dtype=torch.float32).to(device)
 
         explainer = shap.DeepExplainer(nn_model, x_val_tensor.unsqueeze(1))
 
@@ -94,7 +97,7 @@ def compute_shap_values_for_ensemble(
 
         all_shap_values.append(shap_values)
 
-    # Combine or average the SHAP values across the ensemble^p==============================
+    # Combine or average the SHAP values across the ensemble
     avg_shap_values = np.mean(all_shap_values, axis=0)
 
     return avg_shap_values, selected_feature_names
@@ -132,8 +135,9 @@ class TCGASubtypePredictor:
     including SHAP values for feature importance analysis, training values, and the trained
     model itself. It leverages MLflow for experiment tracking and management.
 
-    :param in_mlflow_experiment_name (str): The name of the MLflow experiment under which to log runs.
-    :param in_cancer_types (List[str]): A list of cancer type codes to include in the analysis.
+    Parameters:
+    - in_mlflow_experiment_name (str): The name of the MLflow experiment under which to log runs.
+    - in_cancer_types (List[str]): A list of cancer type codes to include in the analysis.
                                    Default is ["BRCA"], which stands for Breast Invasive Carcinoma.
 
     Attributes:
@@ -195,7 +199,7 @@ class TCGASubtypePredictor:
 
         self.set_mlflow_params()
         self.label_mapping = None
-        self.re_optimize = True
+        self.re_optimize = False
 
     def set_mlflow_params(self):
         """
@@ -368,12 +372,14 @@ class TCGASubtypePredictor:
         stats_df.to_csv()
 
         stats_df.to_csv(self.inputs_stats_summary_path )
-
+        minio_client = get_minio_client()
         gene_id_to_name_df = extract_gene_id_to_name_mapping_minio(
-            in_path_to_save_df=os.path.join(
-                self.results_path, "all_gene_maping_Ensembl_gene_name.csv"
-            ),
+            # in_path_to_save_df=os.path.join(
+            #     self.results_path, "all_gene_maping_Ensembl_gene_name.csv"
+            # ),
             in_gencode_gtf_gz_filepath=gencode_gtf_gz_filepath,
+            minio_client=minio_client
+
         )  # Change the in_gencode_release if necessary
 
         gene_id_to_name_df["Gene ID"] = (
@@ -753,7 +759,6 @@ class TCGASubtypePredictor:
         improve its performance. This is usually done by tuning its hyperparameters. Methods such
         as Grid Search, Random Search, or Bayesian Optimization are used for this purpose.
         """
-
         print(y_train_labels)
 
         # Assuming y is a one-hot encoded numpy array
@@ -945,7 +950,6 @@ class TCGASubtypePredictor:
                 self.loaded_models, X=x_test, feature_names=feature_names
             )
         )
-
         # Use the feature selector
         x_val = self.pipeline[0].transform(x_test)
         selected_indices = self.pipeline[0].get_support(indices=True)
@@ -962,9 +966,10 @@ class TCGASubtypePredictor:
 
         # Ensure model is in evaluation mode
         nn_model.eval()
-
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        nn_model = nn_model.to(device)
         # Convert data to PyTorch tensors
-        self.x_val_tensor = torch.tensor(x_val, dtype=torch.float32)
+        self.x_val_tensor = torch.tensor(x_val, dtype=torch.float32).to(device)
 
         explainer = shap.DeepExplainer(nn_model, self.x_val_tensor.unsqueeze(1))
 
@@ -999,6 +1004,6 @@ if __name__ == "__main__":
     #            'READ', 'LGG', 'DLBC', 'KICH', 'UCS', 'ACC', 'PCPG', 'UVM']
     c_types = ["BRCA"]
     analysis = TCGASubtypePredictor(
-        in_mlflow_experiment_name="TCGA_BRCA_vminio_postgre_3x", in_cancer_types=c_types
+        in_mlflow_experiment_name="TCGA_BRCA_vminio_postgre_3", in_cancer_types=c_types
     )
     analysis.run()
